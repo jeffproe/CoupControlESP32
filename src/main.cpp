@@ -3,31 +3,102 @@
 void setup()
 {
 	Serial.begin(115200);
-
 	pinMode(LED_BUILTIN, OUTPUT);
 
-	digitalWrite(LED_BUILTIN, 1);
+	digitalWrite(LED_BUILTIN, HIGH);
 
-	while (!hasTime())
+	pinMode(_pinHeat, OUTPUT);   // Output mode to drive relay
+	digitalWrite(_pinHeat, LOW); // Make sure it is off to start
+
+	//delay(10 * 1000);
+
+	SetupBmp280();
+	SetupTime();
+
+	digitalWrite(LED_BUILTIN, LOW);
+}
+
+void loop()
+{
+	// Serial.print("Temperature = ");
+	// Serial.print(_bmp.readTemperature());
+	// Serial.println(" *C");
+
+	unsigned long currentMillis = millis();
+
+	HandleTemps(currentMillis);
+
+	//showTime();
+	delay(1000);
+}
+
+void SetupBmp280()
+{
+
+	if (!_bmp.begin())
+	{
+		Serial.println("Could not find a valid BMP280 sensor, check wiring!");
+		while (1)
+		{
+			digitalWrite(LED_BUILTIN, LOW);
+			delay(200);
+			digitalWrite(LED_BUILTIN, HIGH);
+			delay(200);
+		}
+	}
+}
+
+void SetupTime()
+{
+	digitalWrite(LED_BUILTIN, HIGH);
+
+	while (!HasTime())
 	{
 		Serial.println("Time...");
-		updateTime();
-		if (!hasTime())
+		UpdateTime();
+		if (!HasTime())
 		{
 			Serial.println("Time :-(");
 			delay(60 * 1000);
 		}
 	}
-	digitalWrite(LED_BUILTIN, 0);
+	digitalWrite(LED_BUILTIN, LOW);
 }
 
-void loop()
+void HandleTemps(unsigned long currentMillis)
 {
-	showTime();
-	delay(1000);
+	if (currentMillis - _lastReadTime > _readInterval)
+	{
+		_tempInternal = ReadInternalTempF();
+
+		if (_tempInternal < _lowTemp)
+		{
+			_lowTemp = _tempInternal;
+		}
+
+		WriteToDebug();
+
+		_checkTemp++;
+
+		if (_checkTemp >= _checkTempInterval)
+		{
+			_checkTemp = 0;
+			if (_heat)
+			{
+				_heat = _tempInternal < _targetInternalTemp;
+			}
+			else
+			{
+				_heat = _tempInternal <= _minInternalTemp;
+			}
+
+			digitalWrite(_pinHeat, _heat ? HIGH : LOW);
+		}
+		_lastReadTime = currentMillis;
+	}
 }
 
-bool hasTime()
+bool HasTime()
 {
 	time_t nowSecs = time(nullptr);
 	struct tm timeinfo;
@@ -35,7 +106,7 @@ bool hasTime()
 	return timeinfo.tm_year > 100;
 }
 
-void updateTime()
+void UpdateTime()
 {
 	Serial.printf("Scanning for networks\n");
 	Serial.println(WiFi.softAPmacAddress());
@@ -60,15 +131,15 @@ void updateTime()
 
 	for (size_t i = 0; i < openNets.size(); i++)
 	{
-		if (updateTimeFromNetwork(openNets[i]))
+		if (UpdateTimeFromNetwork(openNets[i]))
 		{
 			break;
 		}
 	}
-	showTime();
+	ShowTime();
 }
 
-bool updateTimeFromNetwork(struct Network &network)
+bool UpdateTimeFromNetwork(struct Network &network)
 {
 	Serial.printf("Connecting to: %s c=%d\n", network.ssid.c_str(), network.channel);
 	unsigned long connectTimeout = 20 * 1000;
@@ -89,13 +160,13 @@ bool updateTimeFromNetwork(struct Network &network)
 	String url = "http://neverssl.com";
 	if (status == 3)
 	{
-		return updateTimeFromHttpResponseHeader(url);
+		return UpdateTimeFromHttpResponseHeader(url);
 	}
 	//WiFi.disconnect();
 	return false;
 }
 
-bool updateTimeFromHttpResponseHeader(const String &url)
+bool UpdateTimeFromHttpResponseHeader(const String &url)
 {
 	MyHTTPClient http;
 	http.begin(url.c_str());
@@ -104,20 +175,20 @@ bool updateTimeFromHttpResponseHeader(const String &url)
 	auto date = http.getDate();
 	if (date.length() > 0)
 	{
-		return updateTimeFromDateString(date);
+		return UpdateTimeFromDateString(date);
 	}
 
 	auto location = http.getLocation();
 	if (httpCode / 100 == 3 && location.length() > 0)
 	{
 		Serial.printf("Redirect to: %s\n", location.c_str());
-		return updateTimeFromHttpResponseHeader(location);
+		return UpdateTimeFromHttpResponseHeader(location);
 	}
 
 	return false;
 }
 
-void showTime()
+void ShowTime()
 {
 	time_t nowSecs = time(nullptr);
 	struct tm timeinfo;
@@ -127,7 +198,7 @@ void showTime()
 	//  Serial.println(timeinfo.tm_year);
 }
 
-bool updateTimeFromDateString(const String &date)
+bool UpdateTimeFromDateString(const String &date)
 {
 	Serial.printf("DATE: %s\n", date.c_str());
 
@@ -224,6 +295,32 @@ bool updateTimeFromDateString(const String &date)
 	timezone tz = {0};
 	settimeofday(&tv, &tz);
 	return true;
+}
+
+void WriteToDebug()
+{
+	Serial.print("Internal: ");
+	Serial.print(_tempInternal);
+	Serial.print(" Target: ");
+	Serial.print(_targetInternalTemp);
+	Serial.print(" Heat: ");
+	Serial.print(_heat ? "On  " : "Off ");
+	Serial.print("Low: ");
+	Serial.println(_lowTemp);
+}
+
+float ReadInternalTempC()
+{
+	float temp = _bmp.readTemperature();
+	return temp;
+}
+
+float ReadInternalTempF()
+{
+	float temp = ReadInternalTempC();
+	temp = temp * 1.8 + 32;
+
+	return temp;
 }
 
 static int stricmp(char const *a, char const *b)
