@@ -12,6 +12,7 @@
 #include <SPI.h>
 #include <Adafruit_BMP280.h>
 
+
 using namespace std;
 
 struct Network {
@@ -27,12 +28,17 @@ struct Network {
 
 Adafruit_BMP280 _bmp(BMP_CS, BMP_MOSI, BMP_MISO,  BMP_SCK);//software SPI
 
-unsigned long _lastReadTime = 0;
 
-// Output Relay
+// Output Relays
 #define _pinHeat 22
+#define _pinLight 21
 
+bool _invertRelay = true;
+
+unsigned long _lightInterval = 1000;
+unsigned long _lastLightTime = 0;
 unsigned long _readInterval = 2000; // read temps every 2 seconds
+unsigned long _lastReadTime = 0;
 int _checkTempInterval = 30;        // change lamp state every 30 _readIntervals (60 seconds)
 int _checkTemp = _checkTempInterval - 1;
 
@@ -46,6 +52,7 @@ bool _heat = false;
 void SetupBmp280();
 void SetupTime();
 void HandleTemps(unsigned long currentMillis);
+void HandleLights(unsigned long currentMillis);
 bool HasTime();
 void UpdateTime();
 bool UpdateTimeFromNetwork(struct Network &network);

@@ -7,8 +7,10 @@ void setup()
 
 	digitalWrite(LED_BUILTIN, HIGH);
 
-	pinMode(_pinHeat, OUTPUT);   // Output mode to drive relay
-	digitalWrite(_pinHeat, LOW); // Make sure it is off to start
+	pinMode(_pinHeat, OUTPUT);							// Output mode to drive relay
+	digitalWrite(_pinHeat, _invertRelay ? HIGH : LOW);  // Make sure it is off to start
+	pinMode(_pinLight, OUTPUT);							// Output mode to drive relay
+	digitalWrite(_pinLight, _invertRelay ? HIGH : LOW); // make sure it is off to start
 
 	//delay(10 * 1000);
 
@@ -20,13 +22,10 @@ void setup()
 
 void loop()
 {
-	// Serial.print("Temperature = ");
-	// Serial.print(_bmp.readTemperature());
-	// Serial.println(" *C");
-
 	unsigned long currentMillis = millis();
 
 	HandleTemps(currentMillis);
+	HandleLights(currentMillis);
 
 	//showTime();
 	delay(1000);
@@ -59,10 +58,43 @@ void SetupTime()
 		if (!HasTime())
 		{
 			Serial.println("Time :-(");
-			delay(60 * 1000);
+			for (int i = 60; i > 0; i--)
+			{
+				Serial.printf("Retrying in %i seconds...\r", i);
+				delay(1000);
+			}
+			Serial.println("");
 		}
 	}
 	digitalWrite(LED_BUILTIN, LOW);
+}
+
+void HandleLights(unsigned long currentMillis)
+{
+	if (currentMillis - _lastLightTime > _lightInterval)
+	{
+		// TODO: Make this a little more robust ;-)
+		time_t utc = time(nullptr);
+		struct tm timeinfo;
+		gmtime_r(&utc, &timeinfo);
+
+		if (timeinfo.tm_mon < 4 || timeinfo.tm_mon >= 8) // only use lights in Sept - April
+		{
+			if ((timeinfo.tm_hour >= 12 && timeinfo.tm_hour <= 13) || timeinfo.tm_hour >= 21 || timeinfo.tm_hour <= 0) // 8 - 10am and 5 - 9pm
+			{
+				digitalWrite(_pinLight, _invertRelay ? LOW : HIGH);
+			}
+			else
+			{
+				digitalWrite(_pinLight, _invertRelay ? HIGH : LOW);
+			}
+		}
+		else
+		{
+			digitalWrite(_pinLight, _invertRelay ? HIGH : LOW);
+		}
+		_lastLightTime = currentMillis;
+	}
 }
 
 void HandleTemps(unsigned long currentMillis)
@@ -76,7 +108,7 @@ void HandleTemps(unsigned long currentMillis)
 			_lowTemp = _tempInternal;
 		}
 
-		WriteToDebug();
+		//WriteToDebug();
 
 		_checkTemp++;
 
@@ -92,7 +124,14 @@ void HandleTemps(unsigned long currentMillis)
 				_heat = _tempInternal <= _minInternalTemp;
 			}
 
-			digitalWrite(_pinHeat, _heat ? HIGH : LOW);
+			if (_invertRelay)
+			{
+				digitalWrite(_pinHeat, _heat ? LOW : HIGH);
+			}
+			else
+			{
+				digitalWrite(_pinHeat, _heat ? HIGH : LOW);
+			}
 		}
 		_lastReadTime = currentMillis;
 	}
@@ -100,9 +139,9 @@ void HandleTemps(unsigned long currentMillis)
 
 bool HasTime()
 {
-	time_t nowSecs = time(nullptr);
+	time_t utc = time(nullptr);
 	struct tm timeinfo;
-	gmtime_r(&nowSecs, &timeinfo);
+	gmtime_r(&utc, &timeinfo);
 	return timeinfo.tm_year > 100;
 }
 
@@ -190,12 +229,11 @@ bool UpdateTimeFromHttpResponseHeader(const String &url)
 
 void ShowTime()
 {
-	time_t nowSecs = time(nullptr);
+	time_t utc = time(nullptr);
 	struct tm timeinfo;
-	gmtime_r(&nowSecs, &timeinfo);
+	gmtime_r(&utc, &timeinfo);
 	Serial.print(F("Current time: "));
 	Serial.print(asctime(&timeinfo));
-	//  Serial.println(timeinfo.tm_year);
 }
 
 bool UpdateTimeFromDateString(const String &date)
