@@ -1,4 +1,4 @@
-MIT License
+# [Coup Control](https://github.com/jeffproe/CoupControlESP32)
 
 Copyright (c) 2019 Jeff Proefrock
 
